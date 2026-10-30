@@ -1,134 +1,164 @@
-# QueueFlow: token queue for clinics and salons
+# QueueFlow — Queue Management for Clinics & Salons
 
-QueueFlow is a live, token-based queue for **walk-ins and scheduled appointments**.
-- **Staff** sign in and use it to issue tokens, see the queue in call order, call the next customer and mark services complete.
-- **Customers** open a public board, or their own token page, to see their position and estimated wait. They don't need to log in, and the public view never shows a name.
+QueueFlow is a web app that manages a waiting line using **token numbers**.
+It handles both **walk-in customers** and **scheduled appointments** in one fair queue.
 
-**Stack:** React 18 + Vite 5 · Supabase (Postgres, Auth, Realtime) · deployed on Vercel.
+- **Staff** log in to add customers, see the queue, call the next customer and mark services complete.
+- **Customers** open a public page, with no login, to see their position in the queue and their estimated waiting time. Customer names are **never** shown publicly, only token numbers like `W-012` or `A-004`.
+- Every screen updates **live**. When staff call someone on one device, all other staff screens, the waiting-room board and customers' phones update within about a second.
 
-| Page | URL | Who |
+**Built with:** React + Vite (frontend), Supabase (database, login, realtime), Vercel (hosting).
+
+---
+
+## 🔗 Live demo
+
+**App:** https://YOUR-APP.vercel.app
+
+| Page | Link | Login needed? |
 |---|---|---|
-| Public queue board | `/` | Waiting-room TV, anyone |
-| My token status | `/t/W-012` | Customer's phone (no login) |
-| Staff sign-in | `/staff/login` | Staff |
-| Staff dashboard | `/staff` | Staff (must be on the `staff` allow-list) |
+| Public queue board | `/` | No |
+| Check my token | `/t/W-012` (or type the token on the board) | No |
+| Staff login | `/staff/login` | Yes |
 
-The design reasoning (assumptions, queue priority rule, waiting-time model and trade-offs) is in **[docs/DESIGN.md](docs/DESIGN.md)**. Testing is in **[docs/TESTING.md](docs/TESTING.md)**, and the AI usage log is in **[docs/AI_USAGE_LOG.md](docs/AI_USAGE_LOG.md)**.
+**Demo staff account** (fictional, for review only):
+- Email: `reviewer@queueflow.test`
+- Password: `Review@2026`
 
----
-
-## Architecture: Supabase is the single source of truth
-
-```
- Staff dashboard (any device) ──rpc(call_next / add_ticket / …)──▶ Postgres functions (SECURITY DEFINER, staff-checked)
-                                                                    │  writes tickets
-                                                                    ▼
-                                         trigger bumps queue_signal.version (one row, no personal data)
-                                                                    │  Supabase Realtime (postgres_changes)
-          ┌──────────────────────────────┬──────────────────────────┴─────────────┐
-          ▼                              ▼                                        ▼
-  every staff dashboard          public board  /                         token page /t/:token
-          └──────── each re-fetches rpc(get_queue_snapshot) — names included only for staff ────────┘
-```
-
-- **The browser never holds queue state of its own.** Every screen shows the latest `get_queue_snapshot()` result. After a mutation the screen fetches again; it never patches its local copy.
-- **Sync that survives dropped connections.** A screen fetches the snapshot again when:
-  - a realtime signal arrives
-  - the realtime channel (re)subscribes, which catches changes missed while offline
-  - the tab becomes visible again
-  - the browser comes back online
-  - a poll timer fires: every 30 s while live, every 5 s while realtime is down
-  
-  A badge shows *Live / Reconnecting / Offline*.
-- **Calling is atomic.** `call_next()` selects the next customer with `FOR UPDATE SKIP LOCKED`, so two staff pressing "Call next" at the same moment get two different customers. Token numbers are allocated under an advisory lock.
-- **Estimates use server time.** Each snapshot carries `server_time`, so a wrong device clock can't distort waits.
-- The only thing kept in `localStorage` is **which counter this screen is**, a per-device preference. No queue data is stored there.
-
-### Security
-
-- Only the **anon / publishable key** reaches the browser. The service-role (secret) key is never used by the app and must never be added to Vercel or the repo.
-- RLS is enabled on every table. The `anon` and `authenticated` roles have **no insert/update/delete privileges** on any table. All writes go through functions that call `is_staff()`.
-- `anon` has no access at all to the `tickets` table. Public screens get data only through `get_queue_snapshot()`, which removes `customer_name`, `notes` and `created_by` for anyone who is not staff.
-- **Staff means "on the `public.staff` allow-list"**, not merely "signed in". An accidental sign-up therefore grants nothing. Also disable public sign-ups (step 3 below).
-- The realtime channel carries only a version counter, so it can't leak personal data.
+After logging in, open **Settings & demo data → Load demo data** to fill the queue with fictional customers.
 
 ---
 
-## Setup
+## ✨ Features
 
-### 1. Create the Supabase project
-1. Create a free project at <https://supabase.com>. A region close to your users is best.
-2. Open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. It is safe to run again.
-3. Check that Realtime is on for the signal table: **Database → Publications → `supabase_realtime`** should list `queue_signal`. The script adds it; if your project has no `supabase_realtime` publication, toggle Realtime on for `queue_signal` under **Table Editor → queue_signal**.
+**For staff**
+- Add a customer as a **Walk-in** or an **Appointment**. An appointment can be "here now" or booked ahead and checked in later.
+- See the queue in call order, with token, name, booking type, arrival time, estimated call time, and the reason for each position.
+- **Call next customer.** The app picks who is next automatically.
+- **Complete**, **No-show**, **Undo call**, **Cancel**, and **Call now** (manual override for urgent cases).
+- See the average service time, the number of people waiting, and a wait quote for a new walk-in.
+- Settings: number of open counters, default service time, walk-in target wait, appointment grace period.
 
-### 2. Create a staff account
-1. **Authentication → Users → Add user → Create new user**: enter an email and password, and tick **Auto Confirm User**.
-2. Edit the email in [`supabase/add_staff.sql`](supabase/add_staff.sql) and run it in the SQL Editor.
-3. Repeat for each staff member.
+**For customers**
+- A public board showing "Now serving" and "Up next", with estimated waits.
+- A personal token page showing position, estimated wait and expected time. It changes to "Please go to Counter 1" when called.
 
-### 3. Lock down sign-ups (recommended)
-**Authentication → Sign In / Providers → Email:** turn off **Allow new users to sign up**. Staff accounts are then created only by an admin, as in step 2.
+---
 
-### 4. Run locally
+## ⚖️ How the queue is ordered (walk-ins vs appointments)
+
+Every customer gets a **promised time**:
+- **Appointment:** their booked time, if they check in no more than **10 minutes late**.
+- **Walk-in:** their arrival time **+ 30 minutes**.
+
+**The customer with the earliest promised time is called next.**
+
+This means:
+- Walk-ins are always served **first come, first served** among themselves.
+- On-time appointments are served **at their booked time**.
+- An appointment **cannot push a walk-in back without limit**. Once a walk-in has waited about 30 minutes, they go first.
+- An appointment that arrives **more than 10 minutes late** joins the queue like a walk-in.
+
+Both numbers (30 and 10) can be changed in **Settings**.
+
+**Estimated waiting time** is based on the real average length of recent services, starting at 15 minutes until real data exists, and on the number of open counters.
+
+Full reasoning, assumptions and trade-offs are in [`docs/DESIGN.md`](docs/DESIGN.md).
+
+---
+
+## 🚀 How to run it on your computer
+
+### What you need
+- **Node.js 18 or newer:** https://nodejs.org
+- A free **Supabase** account: https://supabase.com
+
+### Step 1: Download the code and install
 ```bash
-cp .env.example .env.local      # then fill in the two values
+git clone https://github.com/YOUR-USERNAME/queueflow-queue-management.git
+cd queueflow-queue-management
 npm install
-npm run dev                     # http://localhost:5173
 ```
-Find both values under **Project Settings → API / API Keys**:
-- `VITE_SUPABASE_URL`: the project URL
-- `VITE_SUPABASE_ANON_KEY`: the **anon** (legacy) or **publishable** (`sb_publishable_…`) key
 
-Sign in at `/staff/login`, open **Settings & demo data → Load demo data**, then open `/` in another window to see live sync.
-
-### 5. Deploy to Vercel
-1. Push the repo to GitHub:
-   ```bash
-   git init && git add . && git commit -m "QueueFlow"
-   gh repo create queueflow --public --source . --push   # or create the repo on github.com and push
+### Step 2: Set up the database in Supabase
+1. Create a **New project** in Supabase and wait for it to finish setting up.
+2. Open **SQL Editor → New query**, paste the whole contents of [`supabase/schema.sql`](supabase/schema.sql), and click **Run**.
+   You should see "Success". The tables `tickets`, `staff`, `queue_settings` and `queue_signal` now exist.
+3. Create a staff login: go to **Authentication → Users → Add user → Create new user**, enter an email and password, and tick **Auto Confirm User**.
+4. Allow that user to act as staff. In the **SQL Editor**, run this with your email:
+   ```sql
+   insert into public.staff (user_id, display_name)
+   select id, 'Front desk' from auth.users where email = 'your-email@example.com'
+   on conflict do nothing;
    ```
-2. At <https://vercel.com/new>, import the repo. Vercel detects **Vite**: the build command is `npm run build` and the output directory is `dist`. [`vercel.json`](vercel.json) also sets these, plus the SPA rewrite so `/staff` and `/t/W-012` work on refresh.
-3. Under **Environment Variables**, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for **Production, Preview and Development**. Then click **Deploy**.
-   - `VITE_` variables are baked in at build time. After changing them, **redeploy**.
-4. In Supabase, go to **Authentication → URL Configuration** and set **Site URL** to your Vercel URL, for example `https://queueflow-xyz.vercel.app`.
-5. Smoke test production:
-   - open `/` on your phone and `/staff` on a laptop
-   - call the next customer
-   - check that the phone updates within about a second
 
-CLI alternative:
+### Step 3: Connect the app to Supabase
+1. In Supabase, go to **Project Settings → API Keys** and copy:
+   - the **Project URL**, for example `https://abcdefgh.supabase.co`. Don't include `/rest/v1/` at the end.
+   - the **Publishable key** (`sb_publishable_...`) or the legacy **anon public** key (`eyJ...`).
+2. In the project folder, create a file named **`.env.local`** containing:
+   ```
+   VITE_SUPABASE_URL=https://abcdefgh.supabase.co
+   VITE_SUPABASE_ANON_KEY=sb_publishable_xxxxxxxxxxxx
+   ```
+   ⚠️ Never use the **secret / service_role** key.
+
+### Step 4: Start the app
 ```bash
-npx vercel
-npx vercel env add VITE_SUPABASE_URL
-npx vercel env add VITE_SUPABASE_ANON_KEY
-npx vercel --prod
+npm run dev
 ```
+Open the address shown in the terminal, usually **http://localhost:5173**.
+
+- Staff: go to `/staff/login` and sign in with the user from Step 2.
+- Click **Settings & demo data → Load demo data**.
+- Open `/` in another browser window to see the public board update live.
+
+To test on your phone (same Wi-Fi), run `npm run dev -- --host` and open the **Network** address it prints.
 
 ---
 
-## Scripts
+## ☁️ Deploy to Vercel
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Local dev server |
-| `npm run build` | Production build to `dist/` |
-| `npm test` | Unit tests for the queue engine, plus page render tests (jsdom) |
-| `npm run test:sql` | Runs `schema.sql` in PGlite (real Postgres in WASM) and tests RLS, privacy and queue order |
-| `npm run test:all` | Both suites |
+1. Push the code to GitHub.
+2. Go to https://vercel.com/new and **import** the repository. Vercel detects Vite automatically.
+3. Under **Environment Variables**, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, with the same values as `.env.local`.
+4. Click **Deploy**.
+5. In Supabase, go to **Authentication → URL Configuration** and set **Site URL** to your Vercel link.
 
-## Project layout
+If you change the environment variables later, **redeploy** for them to take effect.
 
-```
-supabase/schema.sql          tables, RLS, priority rule, RPCs, realtime signal, demo seed
-supabase/add_staff.sql       grant staff access to an auth user
-supabase/tests/              database tests (PGlite) + Supabase stubs
-src/lib/queueEngine.js       pure forecasting (positions, waits)
-src/hooks/useQueueSnapshot   realtime + polling + reconnect sync with Supabase
-src/hooks/useAuth.jsx        Supabase Auth session + staff check
-src/pages/                   PublicBoard, TokenStatus, StaffLogin, StaffDashboard
-src/components/staff/        counter panel, add form, queue tables, settings
-docs/                        design notes, testing, AI usage log
+---
+
+## 🧪 Tests
+
+```bash
+npm test          # queue logic + page tests
+npm run test:sql  # database security & queue order tests
 ```
 
-## Sample data
-"Load demo data" fills today's queue with **fictional** names, such as "Juniper Okafor" and "Bastian Rook", timed relative to now. No real customer data is used.
+Manual test checklist: [`docs/TESTING.md`](docs/TESTING.md).
+
+---
+
+## 🔒 Security & privacy
+- Only the public (publishable/anon) key is used in the browser.
+- Database rules (RLS) block all direct reads and writes. Only staff accounts listed in the `staff` table can change the queue.
+- The public view receives token numbers only, never names or notes.
+- All sample data is fictional.
+
+---
+
+## 📁 Project structure
+```
+src/pages/          Public board, token page, staff login, staff dashboard
+src/components/     UI pieces (queue table, add-customer form, counter panel, settings)
+src/lib/            Queue logic (queueEngine.js) and Supabase connection
+src/hooks/          Live data sync and login
+supabase/           Database schema (schema.sql), add-staff script, database tests
+docs/               Design decisions, testing, AI usage log
+```
+
+## 📄 Documentation
+- [`docs/DESIGN.md`](docs/DESIGN.md): assumptions, queue logic, waiting-time calculation
+- [`docs/TESTING.md`](docs/TESTING.md): how it was tested
+- [`docs/AI_USAGE_LOG.md`](docs/AI_USAGE_LOG.md): AI prompts used and changes made
