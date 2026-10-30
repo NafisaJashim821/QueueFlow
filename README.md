@@ -13,7 +13,7 @@ It handles both **walk-in customers** and **scheduled appointments** in one fair
 
 ## 🔗 Live demo
 
-**App:** https://YOUR-APP.vercel.app
+**App:** (https://queue-flow-mocha.vercel.app/ )
 
 | Page | Link | Login needed? |
 |---|---|---|
