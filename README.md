@@ -10,6 +10,36 @@ It handles both **walk-in customers** and **scheduled appointments** in one fair
 **Built with:** React + Vite (frontend), Supabase (database, login, realtime), Vercel (hosting).
 
 ---
+## Backend & Real-Time Synchronization
+
+QueueFlow uses **Supabase** as its backend, providing PostgreSQL database storage, staff authentication through Supabase Auth, and real-time updates through Supabase Realtime.
+
+### Why Supabase?
+
+The initial browser-based implementation stored queue data locally, meaning changes were not shared across devices and could be lost after refreshing. Supabase solves this by providing a centralized database accessible from the React application deployed on Vercel, without requiring a separately hosted backend server.
+
+### Single Source of Truth
+
+Supabase acts as the single source of truth for all queue operations, including:
+
+- Adding customers and checking in
+- Calling the next customer
+- Completing service
+- Marking no-shows and cancellations
+
+Every change is saved to Supabase first. All connected staff dashboards, public queue displays, and customer token lookups then retrieve the updated information from the same database.
+
+### Real-Time Synchronization
+
+QueueFlow keeps its interfaces synchronized using three mechanisms:
+
+| Mechanism | Description |
+|---|---|
+| Supabase Realtime | Listens for database changes and automatically refreshes queue data. |
+| Automatic Refresh | Reloads data on reconnection, tab visibility changes, network restoration, and every 30 seconds. |
+| Connection Status | Displays live/reconnecting indicators alongside loading and error states. |
+
+This approach ensures that queue information remains consistent across devices and helps prevent screens from displaying outdated information when a real-time notification is missed.
 
 ## 🔗 Live demo
 
