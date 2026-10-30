@@ -1,0 +1,29 @@
+{
+  "name": "queueflow",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Token-based queue management for clinics and salons (walk-ins + appointments) on React, Vite and Supabase.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:sql": "node supabase/tests/schema.test.mjs",
+    "test:all": "npm run test && npm run test:sql"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.26.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "@testing-library/react": "^16.0.1",
+    "@vitejs/plugin-react": "4.3.2",
+    "jsdom": "^25.0.1",
+    "vite": "5.4.21",
+    "vitest": "2.1.9"
+  }
+}
