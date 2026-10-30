@@ -75,7 +75,7 @@ Full reasoning, assumptions and trade-offs are in [`docs/DESIGN.md`](docs/DESIGN
 
 ### Step 1: Download the code and install
 ```bash
-git clone https://github.com/YOUR-USERNAME/queueflow-queue-management.git
+git clone (https://github.com/NafisaJashim821/QueueFlow.git)
 cd queueflow-queue-management
 npm install
 ```
