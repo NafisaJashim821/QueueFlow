@@ -143,8 +143,6 @@ Open the address shown in the terminal, usually **http://localhost:5173**.
 - Click **Settings & demo data → Load demo data**.
 - Open `/` in another browser window to see the public board update live.
 
-To test on your phone (same Wi-Fi), run `npm run dev -- --host` and open the **Network** address it prints.
-
 ---
 
 ## ☁️ Deploy to Vercel
@@ -155,19 +153,14 @@ To test on your phone (same Wi-Fi), run `npm run dev -- --host` and open the **N
 4. Click **Deploy**.
 5. In Supabase, go to **Authentication → URL Configuration** and set **Site URL** to your Vercel link.
 
-If you change the environment variables later, **redeploy** for them to take effect.
-
 ---
 
 ## 🧪 Tests
 
 ```bash
-npm test          # queue logic + page tests
-npm run test:sql  # database security & queue order tests
+npm test         
+npm run test:sql  
 ```
-
-Manual test checklist: [`docs/TESTING.md`](docs/TESTING.md).
-
 ---
 
 ## 🔒 Security & privacy
@@ -188,7 +181,4 @@ supabase/           Database schema (schema.sql), add-staff script, database tes
 docs/               Design decisions, testing, AI usage log
 ```
 
-## 📄 Documentation
-- [`docs/DESIGN.md`](docs/DESIGN.md): assumptions, queue logic, waiting-time calculation
-- [`docs/TESTING.md`](docs/TESTING.md): how it was tested
-- [`docs/AI_USAGE_LOG.md`](docs/AI_USAGE_LOG.md): AI prompts used and changes made
+
